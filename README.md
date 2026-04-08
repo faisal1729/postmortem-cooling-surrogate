@@ -41,16 +41,24 @@ Cooling curve reconstruction via MH model
 ## Repository Structure
 
 ```
+├── README.md
+├── LICENSE
 ├── config.py              # Parameter ranges, paths, GP settings
-├── core_functions.py      # MH model, NLS fitting, GP model, 
+├── core_functions.py      # MH model, NLS fitting, GP model,
 │                          # acquisition function
 ├── adaptive_loop.py       # Adaptive simulation design and GP training
-├── analysis.py            # EDA, GP evaluation, thesis figures
-│                          # (runs in Google Colab)
-├── data/
-│   └── AdaptiveData/      # Simulation outputs (.gnu files) and
-│                          # fitted parameter CSVs
-└── README.md
+├── kaskadeio.py           # Subprocess wrapper for Kaskade FE solver
+└── data/
+    ├── training_data.csv          # Physical parameters + fitted (A,B)
+    │                              # for 100 training simulations
+    ├── test_data.csv              # Physical parameters + fitted (A,B)
+    │                              # for 16 test simulations
+    ├── adaptive_metrics.csv       # GP uncertainty and prediction error
+    │                              # across 80 adaptive iterations
+    └── coolingCurves/
+        ├── coolingCurve1.gnu      # Raw FE cooling curves
+        ├── ...                    # (indices 1-100: training)
+        └── coolingCurve116.gnu    # (indices 101-116: test)
 ```
 
 ---
@@ -114,21 +122,27 @@ This will:
 
 ### Running the analysis (Google Colab)
 
-Upload the contents of `data/AdaptiveData/` to Google Drive, 
-then open `analysis.py` in Google Colab. Update the directory 
-path at the top of the file:
+The exploratory data analysis, GP surrogate training, evaluation, 
+and figure generation were performed interactively in Google Colab. 
+To reproduce the analysis:
 
+1. Upload the `data/` folder contents to your Google Drive
+2. Open a new Colab notebook
+3. Mount your Google Drive:
 ```python
-directory = '/content/drive/MyDrive/path/to/AdaptiveData'
+from google.drive import drive
+drive.mount('/content/drive')
 ```
-
-The analysis notebook covers:
-- Exploratory data analysis of the training and test datasets
-- Marshall-Hoare goodness-of-fit evaluation
-- GP surrogate training, hyperparameter analysis, and evaluation
-- All figures included in Chapter 4 of the thesis
-
----
+4. Update the directory path to point to your uploaded data:
+```python
+directory = '/content/drive/MyDrive/path/to/data/coolingCurves'
+```
+5. The analysis covers:
+   - Exploratory data analysis of training and test datasets
+   - Marshall-Hoare goodness-of-fit evaluation
+   - GP surrogate training and hyperparameter analysis
+   - Surrogate evaluation and cooling curve reconstruction
+   - All figures included in Chapter 4 of the thesis
 
 ## Data
 
