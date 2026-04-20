@@ -130,7 +130,7 @@ To reproduce the analysis:
 2. Open a new Colab notebook
 3. Mount your Google Drive:
 ```python
-from google.drive import drive
+from google.collab import drive
 drive.mount('/content/drive')
 ```
 4. Update the directory path to point to your uploaded data:
@@ -177,9 +177,9 @@ If you use this code in your research, please cite:
 
 ```bibtex
 @software{shah2026surrogate,
-  author    = {Shah, Faisal Hussain},
-  title     = {Gaussian Process Surrogate for Post-Mortem Cooling 
-               Dynamics: Implementation and Analysis},
+  author  = {Shah, Faisal Hussain},
+  title   = {Gaussian Process Surrogate for Post-Mortem Cooling:
+             Simulation Pipeline and Adaptive Design Implementation},
   year      = {2026},
   publisher = {Zenodo},
   doi       = {10.5281/zenodo.XXXXXXX},
