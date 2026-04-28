@@ -3,8 +3,8 @@
 This repository contains the implementation accompanying the master's 
 thesis:
 
-> **Faisal Hussain Shah** (2026). *Time-of-Death Estimation via Gaussian 
-> Process Surrogate Modelling of Post-Mortem Cooling Dynamics*. 
+> **Faisal Hussain Shah** (2026). *Machine Learning in Forensic Medicine - 
+> Time of Death (ToD) Estimation*. 
 > Master's thesis, Universität Potsdam / Zuse Institute Berlin.
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
