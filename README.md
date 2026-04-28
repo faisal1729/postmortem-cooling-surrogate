@@ -15,8 +15,8 @@ thesis:
 
 Post-mortem body cooling follows the heat equation over a 
 three-dimensional anatomical domain. Direct finite element (FE) 
-simulation of this process is accurate but computationally expensive 
-(~2 minutes per simulation). This repository implements a surrogate 
+simulation of this process is accurate but computationally expensive.
+This repository implements a surrogate 
 modelling pipeline that replaces the FE solver with a Gaussian process 
 (GP) regression model trained on a small adaptive dataset of FE 
 simulations, reducing prediction time to milliseconds while maintaining 
