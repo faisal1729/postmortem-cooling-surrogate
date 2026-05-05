@@ -43,9 +43,9 @@ This repository implements a surrogate modelling pipeline that replaces the FE s
 
 ### Fully reproducible components
 
-- Chapter 2 – theoretical modelling  
-- Chapter 3 – single-curve analysis  
-- Chapter 4 – surrogate modelling pipeline  
+- Chapter 2 – Marshall-Hoare Post-Mortem Cooling Model 
+- Chapter 3 – Gaussian Process Regression  
+- Chapter 4 – Surrogate Modelling of Postmortem Cooling Dynamics  
 
 Run:
 
