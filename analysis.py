@@ -8,14 +8,14 @@ from sklearn.preprocessing import StandardScaler
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-from google.colab import drive
-drive.mount('/content/drive')
+from pathlib import Path
 
 # ── Load datasets ─────────────────────────────────────────────────────────────
 
-training = pd.read_csv('/content/drive/training_data.csv')
-test     = pd.read_csv('/content/drive/test_data.csv')
+BASE_DIR = Path(__file__).resolve().parent
+
+training = pd.read_csv(BASE_DIR / 'data' / 'training_data.csv')
+test     = pd.read_csv(BASE_DIR / 'data' / 'test_data.csv')
 
 # Remove duplicate sim_index 21 — keep first occurrence
 training_clean = training.drop_duplicates(subset='sim_index', keep='first')
@@ -400,7 +400,10 @@ def load_cooling_curves(directory, start_idx=1, end_idx=100):
 
 # ── Load all 100 training cooling curves ─────────────────────────────────────
 
-directory = '/content/drive/MyDrive/ZIB/Cooling Experiments Data/AdaptiveData'
+directory = 'data/coolingCurves'
+
+BASE_DIR = Path(__file__).resolve().parent
+directory = BASE_DIR / 'data' / 'coolingCurves'
 data      = load_cooling_curves(directory, start_idx=1, end_idx=100)
 
 print(f"Loaded data shape : {data.shape}")
@@ -1020,9 +1023,11 @@ t_grid = np.linspace(0, 20, 241)
 
 # ── Load test FE cooling curves from .gnu files ───────────────────────────────
 
-test_gnu_dir = '/content/drive/MyDrive/ZIB/Cooling Experiments Data/AdaptiveData'
+
+BASE_DIR = Path(__file__).resolve().parent
+test_gnu_dir = BASE_DIR / 'data' / 'coolingCurves'
 test_data    = load_cooling_curves(test_gnu_dir,
-                                    start_idx=100,
+                                    start_idx=101,
                                     end_idx=116)
 
 print(f"Loaded test cooling curves: "
