@@ -1,4 +1,4 @@
-```python
+
 """
 Chapter 2: Behaviour of the Marshall–Hoare Model
 
