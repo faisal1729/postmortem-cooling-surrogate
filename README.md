@@ -74,9 +74,8 @@ src/chapter2/
 This chapter investigates the mathematical and physical behaviour of the Marshall–Hoare cooling model under varying parameter regimes. The analysis explores:
 
 - parameter sensitivity,
-- cooling-rate behaviour,
-- asymptotic behaviour,
-- effects of different MH parameter choices.
+- connection to Newton's Law of Cooling,
+- asymptotic behaviour
 
 The implementation is intended primarily for theoretical and exploratory analysis.
 
@@ -272,8 +271,7 @@ See `LICENSE` for details.
 
 This work was carried out at:
 
-- Universität Potsdam
-- Zuse Institute Berlin (ZIB)
+Zuse Institute Berlin (ZIB)
 
 within the Computational Anatomy and Physiology Group.
 
