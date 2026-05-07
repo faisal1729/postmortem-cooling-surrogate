@@ -136,7 +136,10 @@ plt.title("Convergence of $T_{MH}(t)$ to $T_a$")
 plt.grid(alpha=0.3)
 plt.legend()
 plt.tight_layout()
-plt.show()
+plt.savefig(OUT_DIR / "mh_convergence.png",
+            dpi=300,
+            bbox_inches="tight")
+plt.close()
 
 # MH model
 T = marshall_hoare(t, A, B, T0, Ta)
@@ -156,6 +159,9 @@ plt.title(r"Semilog plot showing $T(t)-T_a \sim \Delta A e^{Bt}$")
 plt.grid(alpha=0.3, which='both')
 plt.legend()
 plt.tight_layout()
+plt.savefig(OUT_DIR / "mh_asymptotic_semilog.png",
+            dpi=300,
+            bbox_inches="tight")
 plt.close()
 
 # Helper to save figures
