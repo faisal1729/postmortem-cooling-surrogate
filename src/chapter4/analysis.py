@@ -1,0 +1,1325 @@
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+import gpflow
+from gpflow.utilities import print_summary
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+
+# ── Load datasets ─────────────────────────────────────────────────────────────
+
+BASE_DIR = Path(__file__).resolve().parent
+
+training = pd.read_csv(BASE_DIR / 'data' / 'training_data.csv')
+test     = pd.read_csv(BASE_DIR / 'data' / 'test_data.csv')
+
+# Remove duplicate sim_index 21 — keep first occurrence
+training_clean = training.drop_duplicates(subset='sim_index', keep='first')
+
+print(f"Training rows before deduplication : {len(training)}")
+print(f"Training rows after deduplication  : {len(training_clean)}")
+print(f"Unique sim indices                 : {training_clean['sim_index'].nunique()}")
+
+training = training_clean.copy()
+
+print("Training data:")
+print(f"  Shape   : {training.shape}")
+print(f"  Columns : {list(training.columns)}")
+
+print("\nTest data:")
+print(f"  Shape   : {test.shape}")
+print(f"  Columns : {list(test.columns)}")
+
+# ── Missing values ────────────────────────────────────────────────────────────
+
+print("Missing values in training:")
+print(training.isnull().sum())
+
+print("\nMissing values in test:")
+print(test.isnull().sum())
+
+# ── Physical plausibility checks ──────────────────────────────────────────────
+
+print("\nPhysical plausibility — training:")
+print(f"  A < 1   (unexpected) : {(training['A'] < 1).sum()}")
+print(f"  B >= 0  (unexpected) : {(training['B'] >= 0).sum()}")
+print(f"  A_var <= 0           : {(training['A_var'] <= 0).sum()}")
+print(f"  B_var <= 0           : {(training['B_var'] <= 0).sum()}")
+
+print("\nPhysical plausibility — test:")
+print(f"  A < 1   (unexpected) : {(test['A'] < 1).sum()}")
+print(f"  B >= 0  (unexpected) : {(test['B'] >= 0).sum()}")
+
+# ── Define column groups ──────────────────────────────────────────────────────
+
+parameter_cols = ['hCapM', 'hConM', 'densityM', 'convection', 'height']
+output_cols    = ['A', 'B']
+
+# ── Training summary ──────────────────────────────────────────────────────────
+
+print("=" * 55)
+print("  Input Parameter Summary — Training (101 points)")
+print("=" * 55)
+print(training[parameter_cols].describe().round(4))
+
+print("\n" + "=" * 55)
+print("  MH Output Summary — Training")
+print("=" * 55)
+print(training[output_cols].describe().round(6))
+
+# ── Test summary ──────────────────────────────────────────────────────────────
+
+print("\n" + "=" * 55)
+print("  Input Parameter Summary — Test (16 points)")
+print("=" * 55)
+print(test[parameter_cols].describe().round(4))
+
+print("\n" + "=" * 55)
+print("  MH Output Summary — Test")
+print("=" * 55)
+print(test[output_cols].describe().round(6))
+
+# ── Snippet 4: Distribution of input features ─────────────────────────────────
+# Separate initial Sobol points (iteration=0) from adaptive points (iteration>0)
+# to show how the adaptive strategy changed the sampling distribution.
+
+initial  = training[training['iteration'] == 0]
+adaptive = training[training['iteration'] >  0]
+
+fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+axes = axes.flatten()
+
+labels = {
+    'hCapM'     : 'Heat capacity $c_p$ (J/kgK)',
+    'hConM'     : 'Heat conductivity $k$ (W/mK)',
+    'densityM'  : 'Density $\\rho$ (kg/m³)',
+    'convection': 'Convection coefficient $h$ (W/m²K)',
+    'height'    : 'Body height $L$ (m)'
+}
+
+for i, col in enumerate(parameter_cols):
+    ax = axes[i]
+
+    ax.hist(initial[col], bins=10, alpha=0.6,
+            color='steelblue', edgecolor='white',
+            density=True, label=f'Initial Sobol (n={len(initial)})')
+    ax.hist(adaptive[col], bins=20, alpha=0.5,
+            color='darkorange', edgecolor='white',
+            density=True, label=f'Adaptive (n={len(adaptive)})')
+
+    ax.set_xlabel(labels[col], fontsize=9)
+    ax.set_ylabel('Density', fontsize=9)
+    ax.legend(fontsize=7)
+    ax.spines[['top', 'right']].set_visible(False)
+
+# Hide unused subplot
+axes[-1].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('eda_input_distributions.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+"""These plots mainly describe that the adaptive strategy consistently identified boundary regions of the parameter space as most uncertain."""
+
+# ── Snippet 5: Distribution of fitted MH parameters A and B ──────────────────
+# Compare distributions between initial Sobol points and adaptive points,
+# and between training and test sets.
+
+from scipy import stats
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+configs = [
+    # (column, dataset_label, data, color)
+    ('A', 'Training — Initial Sobol',  initial,  'steelblue'),
+    ('A', 'Training — Adaptive',       adaptive, 'darkorange'),
+    ('B', 'Training — Initial Sobol',  initial,  'steelblue'),
+    ('B', 'Training — Adaptive',       adaptive, 'darkorange'),
+]
+
+output_labels = {
+    'A': 'Shape parameter $A$',
+    'B': 'Decay rate $B$ (hr$^{-1}$)'
+}
+
+# ── Top row: A and B split by initial vs adaptive ─────────────────────────────
+for col_idx, output in enumerate(['A', 'B']):
+    ax = axes[0, col_idx]
+
+    for label, subset, color in [
+        (f'Initial Sobol (n={len(initial)})', initial,  'steelblue'),
+        (f'Adaptive (n={len(adaptive)})',      adaptive, 'darkorange'),
+    ]:
+        values    = subset[output].dropna()
+        mu, sigma = values.mean(), values.std()
+        ax.hist(values, bins=15, alpha=0.5, color=color,
+                edgecolor='white', density=True, label=label)
+        x = np.linspace(values.min(), values.max(), 200)
+        ax.plot(x, stats.norm.pdf(x, mu, sigma),
+                color=color, linewidth=1.5, linestyle='--')
+
+    ax.set_xlabel(output_labels[output], fontsize=10)
+    ax.set_ylabel('Density', fontsize=10)
+    ax.legend(fontsize=8)
+    ax.spines[['top', 'right']].set_visible(False)
+
+# ── Bottom row: training vs test ──────────────────────────────────────────────
+for col_idx, output in enumerate(['A', 'B']):
+    ax = axes[1, col_idx]
+
+    for label, subset, color in [
+        (f'Training (n={len(training)})', training, 'steelblue'),
+        (f'Test (n={len(test)})',          test,     'mediumseagreen'),
+    ]:
+        values    = subset[output].dropna()
+        mu, sigma = values.mean(), values.std()
+        ax.hist(values, bins=15, alpha=0.5, color=color,
+                edgecolor='white', density=True, label=label)
+        x = np.linspace(values.min(), values.max(), 200)
+        ax.plot(x, stats.norm.pdf(x, mu, sigma),
+                color=color, linewidth=1.5, linestyle='--')
+
+    ax.set_xlabel(output_labels[output], fontsize=10)
+    ax.set_ylabel('Density', fontsize=10)
+    ax.legend(fontsize=8)
+    ax.spines[['top', 'right']].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('eda_ab_distributions.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── Print comparison stats ────────────────────────────────────────────────────
+print("A — Initial vs Adaptive:")
+print(f"  Initial  : mean={initial['A'].mean():.4f}, std={initial['A'].std():.4f}")
+print(f"  Adaptive : mean={adaptive['A'].mean():.4f}, std={adaptive['A'].std():.4f}")
+
+print("\nB — Initial vs Adaptive:")
+print(f"  Initial  : mean={initial['B'].mean():.4f}, std={initial['B'].std():.4f}")
+print(f"  Adaptive : mean={adaptive['B'].mean():.4f}, std={adaptive['B'].std():.4f}")
+
+print("\nA — Training vs Test:")
+print(f"  Training : mean={training['A'].mean():.4f}, std={training['A'].std():.4f}")
+print(f"  Test     : mean={test['A'].mean():.4f},     std={test['A'].std():.4f}")
+
+print("\nB — Training vs Test:")
+print(f"  Training : mean={training['B'].mean():.4f}, std={training['B'].std():.4f}")
+print(f"  Test     : mean={test['B'].mean():.4f},     std={test['B'].std():.4f}")
+
+# ── Snippet 6: Correlation between input parameters and MH outputs ────────────
+# Pearson correlation reveals linear relationships between physical parameters
+# and fitted MH parameters. This gives a first indication of which inputs
+# drive A and B most strongly — a preview of what GP length scales will confirm.
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+corr_cols = parameter_cols + ['A', 'B']
+corr_matrix = training[corr_cols].corr()
+
+# ── Heatmap ───────────────────────────────────────────────────────────────────
+for ax, target in zip(axes, ['A', 'B']):
+    correlations = corr_matrix[target].drop(['A', 'B']).sort_values()
+
+    colors = ['crimson' if v < 0 else 'steelblue' for v in correlations]
+
+    ax.barh(correlations.index, correlations.values,
+            color=colors, edgecolor='white', alpha=0.8)
+    ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
+    ax.set_xlabel('Pearson correlation', fontsize=10)
+    ax.set_xlim(-1, 1)
+    ax.set_title(f'Correlation with {target}', fontsize=11)
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # Annotate values
+    for i, (val, label) in enumerate(zip(correlations.values,
+                                          correlations.index)):
+        ax.text(val + 0.02 if val >= 0 else val - 0.02,
+                i, f'{val:.3f}',
+                va='center',
+                ha='left' if val >= 0 else 'right',
+                fontsize=8)
+
+plt.tight_layout()
+plt.savefig('eda_correlations.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── Print correlation table ───────────────────────────────────────────────────
+print("Pearson correlations with A and B:")
+print(corr_matrix[['A', 'B']].drop(['A', 'B']).round(4).to_string())
+
+# ── Snippet 7: Scatter plots of each input feature vs A and B ────────────────
+# Reveals nonlinear relationships that Pearson correlation may miss.
+# Points are coloured by iteration to show whether adaptive sampling
+# concentrated in specific output regions.
+
+fig, axes = plt.subplots(len(parameter_cols), 2,
+                          figsize=(10, 16))
+
+xlabels = {
+    'hCapM'     : 'Heat capacity $c_p$ (J/kgK)',
+    'hConM'     : 'Heat conductivity $k$ (W/mK)',
+    'densityM'  : 'Density $\\rho$ (kg/m³)',
+    'convection': 'Convection coefficient $h$ (W/m²K)',
+    'height'    : 'Body height $L$ (m)'
+}
+
+for row, param in enumerate(parameter_cols):
+    for col, target in enumerate(['A', 'B']):
+        ax = axes[row, col]
+
+        # Initial Sobol points
+        ax.scatter(initial[param], initial[target],
+                   color='steelblue', s=40, alpha=0.8,
+                   edgecolors='white', linewidth=0.3,
+                   label='Initial Sobol', zorder=3)
+
+        # Adaptive points
+        ax.scatter(adaptive[param], adaptive[target],
+                   color='darkorange', s=25, alpha=0.6,
+                   edgecolors='white', linewidth=0.3,
+                   label='Adaptive', zorder=2)
+
+        # Test points
+        ax.scatter(test[param], test[target],
+                   color='mediumseagreen', s=40, alpha=0.9,
+                   edgecolors='white', linewidth=0.3,
+                   marker='D', label='Test', zorder=4)
+
+        ax.set_xlabel(xlabels[param], fontsize=8)
+        ax.set_ylabel(f'${target}$' if target == 'A'
+                      else '$B$ (hr$^{-1}$)', fontsize=8)
+        ax.spines[['top', 'right']].set_visible(False)
+
+        # Only show legend on first row
+        if row == 0:
+            ax.legend(fontsize=7)
+
+plt.tight_layout()
+plt.savefig('eda_scatter_inputs_vs_outputs.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(6, 5))
+
+# Initial Sobol points
+ax.scatter(initial['hConM'], initial['densityM'],
+           color='steelblue', s=50, alpha=0.9,
+           edgecolors='white', linewidth=0.5,
+           label=f'Initial Sobol (n={len(initial)})', zorder=3)
+
+# Adaptive points
+ax.scatter(adaptive['hConM'], adaptive['densityM'],
+           color='darkorange', s=35, alpha=0.7,
+           edgecolors='white', linewidth=0.4,
+           label=f'Adaptive (n={len(adaptive)})', zorder=2)
+
+ax.set_xlabel(r'Thermal conductivity $\kappa$', fontsize=11)
+ax.set_ylabel(r'Density $\rho$', fontsize=11)
+ax.spines[['top', 'right']].set_visible(False)
+ax.legend(fontsize=9, loc='best')
+
+plt.tight_layout()
+plt.savefig('sample_distribution_kappa_rho.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+"""We now plot the residuals:"""
+
+import re
+import os
+import numpy as np
+import pandas as pd
+from scipy.optimize import curve_fit
+
+# ── Parse .gnu files ──────────────────────────────────────────────────────────
+
+def extract_features(text, file_path):
+    """
+    Extract physical parameters from a .gnu file header.
+    """
+    features = {}
+
+    conv_match   = re.search(r"Convection Coefficient:\s*([\d.]+)", text)
+    height_match = re.search(r"body height:\s*([\d.]+)", text)
+    muscle_match = re.search(r"muscle\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)", text)
+
+    if conv_match:
+        features['convection'] = float(conv_match.group(1))
+    if height_match:
+        features['height'] = float(height_match.group(1))
+    if muscle_match:
+        features['hCapM']    = float(muscle_match.group(1))
+        features['hConM']    = float(muscle_match.group(2))
+        features['densityM'] = float(muscle_match.group(3))
+
+    return {'file_path': file_path, 'features': features}
+
+
+def load_cooling_curves(directory, start_idx=1, end_idx=100):
+    """
+    Load cooling curves from .gnu files in numerical order.
+    Returns a single dataframe with time-temperature pairs
+    and physical parameters as repeated columns.
+    """
+    dfs = []
+
+    for idx in range(start_idx, end_idx + 1):
+        filename  = f"coolingCurve{idx}.gnu"
+        file_path = os.path.join(directory, filename)
+
+        if not os.path.exists(file_path):
+            print(f"Warning: {filename} not found, skipping.")
+            continue
+
+        with open(file_path, 'r') as f:
+            content = f.read()
+
+        result = extract_features(content, file_path)
+
+        df = pd.read_csv(
+            file_path,
+            sep=r'\s+', comment='#',
+            header=None, names=['time', 'Temperature']
+        )
+
+        for key, value in result['features'].items():
+            df[key] = value
+
+        df['sim_index'] = idx
+        dfs.append(df)
+
+    data = pd.concat(dfs, ignore_index=True)
+    data['Time'] = data['time'] / 60.0
+    data.drop(columns=['time'], inplace=True)
+
+    return data
+
+
+# ── Load all 100 training cooling curves ─────────────────────────────────────
+
+directory = 'data/coolingCurves'
+
+BASE_DIR = Path(__file__).resolve().parent
+directory = BASE_DIR / 'data' / 'coolingCurves'
+data      = load_cooling_curves(directory, start_idx=1, end_idx=100)
+
+print(f"Loaded data shape : {data.shape}")
+print(f"Unique simulations: {data['sim_index'].nunique()}")
+
+print(data.head())
+
+# ── Snippet 9: MH model residuals across all 100 simulations ─────────────────
+# For each simulation, reconstruct the MH curve using fitted (A, B) from
+# training_data.csv and compute residuals against the FE cooling curve.
+# This quantifies the MH approximation error on the new adaptive dataset.
+
+def marshall_hoare(t, A, B, T0, Ta):
+    """Marshall-Hoare model with L'Hopital regularization at A=1."""
+    r1         = np.clip(B * t, -709, 709)
+    delta      = A - 1.0
+    near_one   = np.abs(delta) < 1e-6
+    delta_safe = np.where(near_one, 1.0, delta)
+    x          = np.clip((B * t) / delta_safe, -709, 709)
+    second     = np.where(near_one, 0.0, (1.0 - A) * np.exp(x))
+    theta      = np.exp(r1) * (A + second)
+    return Ta + (T0 - Ta) * theta
+
+
+T0 = 37.0
+Ta = 21.0
+parameter_cols = ['hCapM', 'hConM', 'densityM', 'convection', 'height']
+
+# ── Compute residuals for all 100 simulations ─────────────────────────────────
+
+all_residuals = []   # for global residual plot
+rmse_list     = []   # per-curve RMSE
+maxad_list    = []   # per-curve max absolute deviation
+r2_list       = []   # per-curve R²
+
+grouped = data.groupby('sim_index')
+
+for sim_idx, group_df in grouped:
+    t = group_df['Time'].values.astype(float)
+    T = group_df['Temperature'].values.astype(float)
+
+    # Get fitted A, B from training_data.csv
+    row = training[training['sim_index'] == sim_idx]
+    if row.empty:
+        continue
+
+    A_opt = row['A'].values[0]
+    B_opt = row['B'].values[0]
+
+    # Filter valid points — same as fitting procedure
+    valid  = (T > Ta) & (t > 0)
+    t_fit  = t[valid]
+    T_fit  = T[valid]
+
+    T_pred = marshall_hoare(t_fit, A_opt, B_opt, T0, Ta)
+    resid  = T_fit - T_pred
+
+    # Store for global plot
+    all_residuals.append((t_fit, resid))
+
+    # Goodness of fit metrics
+    ss_res = np.sum(resid ** 2)
+    ss_tot = np.sum((T_fit - T_fit.mean()) ** 2)
+
+    rmse_list.append(np.sqrt(np.mean(resid ** 2)))
+    maxad_list.append(np.max(np.abs(resid)))
+    r2_list.append(1 - ss_res / ss_tot if ss_tot > 0 else np.nan)
+
+# ── Residual plot ─────────────────────────────────────────────────────────────
+
+fig, ax = plt.subplots(figsize=(9, 4))
+
+for t_fit, resid in all_residuals:
+    ax.plot(t_fit, resid, color='steelblue',
+            linewidth=0.5, alpha=0.2)
+
+ax.axhline(0, color='black', linewidth=1.2,
+           linestyle='--', label='Zero line')
+
+ax.set_xlabel('Time (hours)', fontsize=11)
+ax.set_ylabel('Residual $T_{\\mathrm{FE}} - T_{\\mathrm{MH}}$ (°C)',
+              fontsize=11)
+ax.legend(fontsize=9)
+ax.spines[['top', 'right']].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('mh_residuals_adaptive.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── Goodness of fit summary ───────────────────────────────────────────────────
+
+print("=" * 50)
+print("  MH Goodness-of-Fit — 100 Simulations")
+print("=" * 50)
+
+for label, values, unit, fmt in [
+    ('RMSE',               rmse_list,  '°C', '.4f'),
+    ('Max abs deviation',  maxad_list, '°C', '.4f'),
+    ('R²',                 r2_list,    '—',  '.6f'),
+]:
+    arr = np.array(values)
+    print(f"\n  {label}  ({unit})")
+    print(f"    mean ± std : {arr.mean():{fmt}} ± {arr.std():{fmt}}")
+    print(f"    range      : [{arr.min():{fmt}},  {arr.max():{fmt}}]")
+    print(f"    median     : {arr.median() if hasattr(arr, 'median') else np.median(arr):{fmt}}")
+
+print("=" * 50)
+
+# ── Identify the outlier simulation ──────────────────────────────────────────
+# The outlier has max absolute deviation well above the others —
+# find which sim_index it corresponds to.
+
+outlier_threshold = 0.45  # clearly separated from the rest
+
+outlier_sims = []
+
+for sim_idx, group_df in grouped:
+    t = group_df['Time'].values.astype(float)
+    T = group_df['Temperature'].values.astype(float)
+
+    row = training[training['sim_index'] == sim_idx]
+    if row.empty:
+        continue
+
+    A_opt = row['A'].values[0]
+    B_opt = row['B'].values[0]
+
+    valid  = (T > Ta) & (t > 0)
+    t_fit  = t[valid]
+    T_fit  = T[valid]
+
+    T_pred = marshall_hoare(t_fit, A_opt, B_opt, T0, Ta)
+    resid  = T_fit - T_pred
+    maxad  = np.max(np.abs(resid))
+
+    if maxad > outlier_threshold:
+        outlier_sims.append({
+            'sim_index': sim_idx,
+            'max_deviation': maxad,
+            'A': A_opt,
+            'B': B_opt,
+            **dict(zip(parameter_cols,
+                       row[parameter_cols].values[0]))
+        })
+
+outlier_df = pd.DataFrame(outlier_sims)
+print("Outlier simulations:")
+print(outlier_df.to_string())
+
+# ── Plot the outlier curve separately ────────────────────────────────────────
+
+outlier_idx = 21
+group_df    = data[data['sim_index'] == outlier_idx]
+row         = training[training['sim_index'] == outlier_idx]
+
+t = group_df['Time'].values.astype(float)
+T = group_df['Temperature'].values.astype(float)
+
+valid  = (T > Ta) & (t > 0)
+t_fit  = t[valid]
+T_fit  = T[valid]
+
+A_opt  = row['A'].values[0]
+B_opt  = row['B'].values[0]
+T_pred = marshall_hoare(t_fit, A_opt, B_opt, T0, Ta)
+resid  = T_fit - T_pred
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+# Left — FE curve vs MH fit
+axes[0].plot(t_fit, T_fit, color='steelblue',
+             linewidth=1.5, label='FE simulation')
+axes[0].plot(t_fit, T_pred, color='crimson',
+             linewidth=1.5, linestyle='--',
+             label=f'MH fit ($A={A_opt:.3f}$, $B={B_opt:.4f}$)')
+axes[0].axhline(Ta, color='gray', linestyle=':',
+                linewidth=1.0, label=f'$T_a={Ta}$°C')
+axes[0].set_xlabel('Time (hours)', fontsize=10)
+axes[0].set_ylabel('Temperature (°C)', fontsize=10)
+axes[0].legend(fontsize=8)
+axes[0].spines[['top', 'right']].set_visible(False)
+axes[0].set_title(f'Simulation {outlier_idx} — curve fit', fontsize=10)
+
+# Right — residual
+axes[1].plot(t_fit, resid, color='steelblue', linewidth=1.5)
+axes[1].axhline(0, color='black', linestyle='--', linewidth=1.0)
+axes[1].set_xlabel('Time (hours)', fontsize=10)
+axes[1].set_ylabel('Residual $T_{\\mathrm{FE}} - T_{\\mathrm{MH}}$ (°C)',
+                    fontsize=10)
+axes[1].spines[['top', 'right']].set_visible(False)
+axes[1].set_title(f'Simulation {outlier_idx} — residual', fontsize=10)
+
+plt.tight_layout()
+plt.savefig('outlier_sim21.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print(f"Simulation 21 parameters:")
+print(f"  hConM      = {row['hConM'].values[0]:.4f}  (low conductivity)")
+print(f"  convection = {row['convection'].values[0]:.4f}  (high convection)")
+print(f"  A          = {A_opt:.4f}")
+print(f"  B          = {B_opt:.6f}")
+print(f"  Max deviation = {resid.max():.4f} °C")
+
+# ── Snippet 10: Training vs test parameter distributions ─────────────────────
+# Confirms that test points are genuinely inside the training parameter space
+# and that the surrogate is being asked to interpolate, not extrapolate.
+
+fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+axes = axes.flatten()
+
+xlabels = {
+    'hCapM'     : 'Heat capacity $c_p$ (J/kgK)',
+    'hConM'     : 'Heat conductivity $k$ (W/mK)',
+    'densityM'  : 'Density $\\rho$ (kg/m³)',
+    'convection': 'Convection coefficient $h$ (W/m²K)',
+    'height'    : 'Body height $L$ (m)'
+}
+
+for i, col in enumerate(parameter_cols):
+    ax = axes[i]
+
+    # Training distribution
+    ax.hist(training[col], bins=20, alpha=0.5,
+            color='steelblue', edgecolor='white',
+            density=True, label=f'Training (n={len(training)})')
+
+    # Test distribution
+    ax.hist(test[col], bins=10, alpha=0.6,
+            color='mediumseagreen', edgecolor='white',
+            density=True, label=f'Test (n={len(test)})')
+
+    # Mark training min/max with vertical lines
+    ax.axvline(training[col].min(), color='steelblue',
+               linestyle=':', linewidth=1.2, alpha=0.7)
+    ax.axvline(training[col].max(), color='steelblue',
+               linestyle=':', linewidth=1.2, alpha=0.7)
+
+    # Mark test min/max
+    ax.axvline(test[col].min(), color='mediumseagreen',
+               linestyle='--', linewidth=1.2, alpha=0.8)
+    ax.axvline(test[col].max(), color='mediumseagreen',
+               linestyle='--', linewidth=1.2, alpha=0.8)
+
+    ax.set_xlabel(xlabels[col], fontsize=9)
+    ax.set_ylabel('Density', fontsize=9)
+    ax.legend(fontsize=7)
+    ax.spines[['top', 'right']].set_visible(False)
+
+# Hide unused subplot
+axes[-1].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('eda_train_test_comparison.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── Print range comparison table ──────────────────────────────────────────────
+
+print("=" * 65)
+print(f"  {'Parameter':<12} {'Train min':>10} {'Train max':>10} "
+      f"{'Test min':>10} {'Test max':>10}")
+print("=" * 65)
+for col in parameter_cols:
+    print(f"  {col:<12} "
+          f"{training[col].min():>10.4f} "
+          f"{training[col].max():>10.4f} "
+          f"{test[col].min():>10.4f} "
+          f"{test[col].max():>10.4f}")
+print("=" * 65)
+
+"""We set up the GPR model now:"""
+
+# ── Define parameter columns ──────────────────────────────────────────────────
+
+parameter_cols = ['hCapM', 'hConM', 'densityM', 'convection', 'height']
+
+# ── Extract inputs and outputs ────────────────────────────────────────────────
+
+# Training
+X_train_raw = training[parameter_cols].values.astype(np.float64)
+Y_A_train   = training['A'].values.reshape(-1, 1).astype(np.float64)
+Y_B_train   = training['B'].values.reshape(-1, 1).astype(np.float64)
+
+# Test
+X_test_raw  = test[parameter_cols].values.astype(np.float64)
+Y_A_test    = test['A'].values.reshape(-1, 1).astype(np.float64)
+Y_B_test    = test['B'].values.reshape(-1, 1).astype(np.float64)
+
+print("Training set:")
+print(f"  X shape : {X_train_raw.shape}")
+print(f"  Y_A shape: {Y_A_train.shape}")
+print(f"  Y_B shape: {Y_B_train.shape}")
+
+print("\nTest set:")
+print(f"  X shape : {X_test_raw.shape}")
+print(f"  Y_A shape: {Y_A_test.shape}")
+print(f"  Y_B shape: {Y_B_test.shape}")
+
+# ── Scale inputs to zero mean and unit variance ───────────────────────────────
+# Fit scaler on training data only — then apply same transformation to test.
+# The scaler must be saved since we need it later to transform
+# any new input point before passing it to the trained GP.
+
+scaler  = StandardScaler()
+X_train = scaler.fit_transform(X_train_raw)
+X_test  = scaler.transform(X_test_raw)
+
+# ── Verify scaling ────────────────────────────────────────────────────────────
+
+print("Training set after scaling:")
+print(f"  Mean per feature (should be ~0) : "
+      f"{np.round(X_train.mean(axis=0), 6)}")
+print(f"  Std  per feature (should be ~1) : "
+      f"{np.round(X_train.std(axis=0), 6)}")
+
+print("\nTest set after scaling:")
+print(f"  Mean per feature : {np.round(X_test.mean(axis=0), 4)}")
+print(f"  Std  per feature : {np.round(X_test.std(axis=0), 4)}")
+
+print("\nScaler parameters (used to transform new inputs later):")
+for col, mu, sigma in zip(parameter_cols,
+                           scaler.mean_, scaler.scale_):
+    print(f"  {col:<12} : mean = {mu:.4f},  std = {sigma:.4f}")
+
+# ── Build one GP model per output ─────────────────────────────────────────────
+# Two independent GPs — one for A, one for B.
+# Matern-5/2 kernel with ARD (one length scale per input dimension)
+# allows the model to learn which physical parameters matter most
+# for predicting each MH parameter.
+
+def build_gp_model(X, Y, noise_variance=1e-4):
+    """
+    Build a GPflow GPR model with Matern-5/2 ARD kernel.
+
+    Parameters
+    ----------
+    X              : array, shape (n, d) — scaled inputs
+    Y              : array, shape (n, 1) — output values
+    noise_variance : float — small value since FE data is deterministic
+
+    Returns
+    -------
+    model : gpflow.models.GPR
+    """
+    kernel = gpflow.kernels.Matern52(
+        lengthscales=np.ones(X.shape[1]),  # one per input dimension
+        variance=1.0
+    )
+    model = gpflow.models.GPR(
+        data=(X.astype(np.float64), Y.astype(np.float64)),
+        kernel=kernel,
+        noise_variance=noise_variance
+    )
+    return model
+
+
+# ── Instantiate models ────────────────────────────────────────────────────────
+
+gp_A = build_gp_model(X_train, Y_A_train)
+gp_B = build_gp_model(X_train, Y_B_train)
+
+# ── Print initial summaries ───────────────────────────────────────────────────
+
+print("Initial GP model for A:")
+gpflow.utilities.print_summary(gp_A)
+
+print("\nInitial GP model for B:")
+gpflow.utilities.print_summary(gp_B)
+
+from gpflow.optimizers import Scipy
+
+# ── Optimize GP hyperparameters ───────────────────────────────────────────────
+# Maximize log marginal likelihood using L-BFGS-B via GPflow's Scipy wrapper.
+# This finds the kernel variance, length scales, and noise variance that
+# best explain the training data.
+
+def optimize_gp(model, model_name="GP"):
+    """
+    Optimize GP hyperparameters by maximizing log marginal likelihood.
+
+    Parameters
+    ----------
+    model      : gpflow.models.GPR
+    model_name : str, label for print output
+
+    Returns
+    -------
+    opt_result : scipy optimization result
+    """
+    opt        = Scipy()
+    opt_result = opt.minimize(
+        model.training_loss,
+        model.trainable_variables,
+        options=dict(maxiter=1000)
+    )
+
+    print(f"\n{model_name} optimization")
+    print(f"  Converged              : {opt_result.success}")
+    print(f"  Log marginal likelihood: {-opt_result.fun:.4f}")
+
+    return opt_result
+
+
+# ── Run optimization ──────────────────────────────────────────────────────────
+
+print("Optimizing GP for A ...")
+opt_A = optimize_gp(gp_A, model_name="GP for A")
+
+print("\nOptimizing GP for B ...")
+opt_B = optimize_gp(gp_B, model_name="GP for B")
+
+0# ── Print optimized summaries ─────────────────────────────────────────────────
+
+print("\nOptimized hyperparameters — GP for A:")
+gpflow.utilities.print_summary(gp_A)
+
+print("\nOptimized hyperparameters — GP for B:")
+gpflow.utilities.print_summary(gp_B)
+
+# ── Extract optimized length scales ──────────────────────────────────────────
+
+ls_A = gp_A.kernel.lengthscales.numpy()
+ls_B = gp_B.kernel.lengthscales.numpy()
+
+print("Optimized length scales — GP for A:")
+for col, ls in zip(parameter_cols, ls_A):
+    print(f"  {col:<12} : {ls:.4f}")
+
+print("\nOptimized length scales — GP for B:")
+for col, ls in zip(parameter_cols, ls_B):
+    print(f"  {col:<12} : {ls:.4f}")
+
+print(f"\nKernel variance — GP for A : "
+      f"{gp_A.kernel.variance.numpy():.4f}")
+print(f"Kernel variance — GP for B : "
+      f"{gp_B.kernel.variance.numpy():.6f}")
+
+# ── Visualize length scales ───────────────────────────────────────────────────
+# Shorter length scale = more sensitive = more important for prediction.
+# We plot inverse length scale (sensitivity) for easier interpretation.
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+xlabels_short = {
+    'hCapM'     : '$c_p$',
+    'hConM'     : '$k$',
+    'densityM'  : '$\\rho$',
+    'convection': '$h$',
+    'height'    : '$L$'
+}
+
+configs = [
+    (ls_A, 'GP for $A$',  'steelblue'),
+    (ls_B, 'GP for $B$',  'darkorange'),
+]
+
+for ax, (ls, title, color) in zip(axes, configs):
+    # Use log scale for length scales — they span many orders of magnitude
+    log_ls = np.log10(ls)
+    labels = [xlabels_short[c] for c in parameter_cols]
+
+    bars = ax.barh(labels, log_ls, color=color,
+                   alpha=0.7, edgecolor='white')
+
+    # Annotate with actual values
+    for bar, val, raw in zip(bars, log_ls, ls):
+        ax.text(val + 0.1, bar.get_y() + bar.get_height() / 2,
+                f'{raw:.2f}', va='center', fontsize=9)
+
+    ax.set_xlabel('$\\log_{10}$(length scale)', fontsize=10)
+    ax.set_title(title, fontsize=11)
+    ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # Add annotation explaining interpretation
+    ax.text(0.98, 0.02,
+            'shorter = more sensitive',
+            transform=ax.transAxes,
+            ha='right', va='bottom',
+            fontsize=8, color='gray', style='italic')
+
+plt.tight_layout()
+plt.savefig('gp_length_scales.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── GP predictions on test set ────────────────────────────────────────────────
+# predict_f returns the noiseless posterior — appropriate for evaluating
+# surrogate accuracy on a deterministic simulator output.
+
+A_pred_mean, A_pred_var = gp_A.predict_f(X_test)
+B_pred_mean, B_pred_var = gp_B.predict_f(X_test)
+
+# Flatten to 1D arrays
+A_pred = A_pred_mean.numpy().flatten()
+B_pred = B_pred_mean.numpy().flatten()
+A_var  = A_pred_var.numpy().flatten()
+B_var  = B_pred_var.numpy().flatten()
+A_true = Y_A_test.flatten()
+B_true = Y_B_test.flatten()
+
+# ── Parameter-level errors ────────────────────────────────────────────────────
+
+rmse_A = np.sqrt(np.mean((A_true - A_pred) ** 2))
+rmse_B = np.sqrt(np.mean((B_true - B_pred) ** 2))
+mae_A  = np.mean(np.abs(A_true - A_pred))
+mae_B  = np.mean(np.abs(B_true - B_pred))
+
+print("=" * 50)
+print("  GP Prediction Accuracy — Test Set (16 points)")
+print("=" * 50)
+print(f"\n  Parameter A")
+print(f"    RMSE : {rmse_A:.4f}")
+print(f"    MAE  : {mae_A:.4f}")
+print(f"\n  Parameter B")
+print(f"    RMSE : {rmse_B:.6f}")
+print(f"    MAE  : {mae_B:.6f}")
+print("=" * 50)
+
+# ── Predicted vs true scatter plots ──────────────────────────────────────────
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+for ax, true, pred, var, label, color in zip(
+    axes,
+    [A_true, B_true],
+    [A_pred, B_pred],
+    [A_var,  B_var],
+    ['Shape parameter $A$', 'Decay rate $B$ (hr$^{-1}$)'],
+    ['steelblue', 'darkorange']
+):
+    # Error bars from predictive std
+    std = np.sqrt(var)
+    ax.errorbar(true, pred, yerr=2*std,
+                fmt='o', color=color, alpha=0.7,
+                ecolor='gray', elinewidth=0.8,
+                capsize=3, markersize=5,
+                label='Predicted ± 2std')
+
+    # Perfect prediction line
+    lims = [min(true.min(), pred.min()) - 0.02,
+            max(true.max(), pred.max()) + 0.02]
+    ax.plot(lims, lims, color='black',
+            linewidth=1.2, linestyle='--', label='Perfect prediction')
+
+    ax.set_xlabel(f'True {label}', fontsize=10)
+    ax.set_ylabel(f'Predicted {label}', fontsize=10)
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    ax.legend(fontsize=8)
+    ax.spines[['top', 'right']].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('gp_predicted_vs_true.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+
+configs = [
+    (A_true, A_pred, A_var, 'Shape parameter $A$', rmse_A),
+    (B_true, B_pred, B_var, 'Decay rate $B$ (h$^{-1}$)', rmse_B),
+]
+
+for ax, (true, pred, var, label, rmse) in zip(axes, configs):
+    std = np.sqrt(var)
+    z = np.abs(true - pred) / std
+
+    # Color code by calibration
+    colors = np.where(z < 1, '#2ca02c',
+             np.where(z < 2, '#ff7f0e', '#d62728'))
+
+    # Diagonal and uncertainty band
+    lims = [min(true.min(), pred.min()) - 0.02,
+            max(true.max(), pred.max()) + 0.02]
+    diag = np.linspace(lims[0], lims[1], 100)
+    mean_std = np.mean(std)
+    ax.fill_between(diag, diag - 2*mean_std, diag + 2*mean_std,
+                    color='lightgray', alpha=0.4,
+                    label=r'$\pm 2\sigma$ band (mean)')
+    ax.plot(lims, lims, color='black', linewidth=1.0,
+            linestyle='--', label='Perfect prediction')
+
+    # Points colored by calibration
+    for j in range(len(true)):
+        ax.scatter(true[j], pred[j], color=colors[j],
+                   s=60, alpha=0.85, edgecolors='white',
+                   linewidth=0.5, zorder=3)
+
+    # Annotate
+    ax.text(0.05, 0.95,
+            f'RMSE = {rmse:.4f}\n'
+            f'within $1\\sigma$: {(z<1).sum()}/{len(z)}\n'
+            f'within $2\\sigma$: {(z<2).sum()}/{len(z)}',
+            transform=ax.transAxes,
+            ha='left', va='top', fontsize=9,
+            bbox=dict(boxstyle='round,pad=0.4',
+                      facecolor='white',
+                      edgecolor='lightgray', alpha=0.9))
+
+    ax.set_xlabel(f'True {label}', fontsize=10)
+    ax.set_ylabel(f'Predicted {label}', fontsize=10)
+    ax.set_xlim(lims); ax.set_ylim(lims)
+    ax.legend(loc='lower right', fontsize=8)
+    ax.spines[['top', 'right']].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('gp_predicted_vs_true_calibrated.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── Reconstruct cooling curves from surrogate-predicted (A, B) ────────────────
+# For each test point:
+#   1. GP predicts (A, B) from physical parameters
+#   2. MH model reconstructs the full cooling curve
+#   3. Compare against the true FE simulation
+
+T0     = 37.0
+Ta     = 21.0
+t_grid = np.linspace(0, 20, 241)
+
+# ── Load test FE cooling curves from .gnu files ───────────────────────────────
+
+
+BASE_DIR = Path(__file__).resolve().parent
+test_gnu_dir = BASE_DIR / 'data' / 'coolingCurves'
+test_data    = load_cooling_curves(test_gnu_dir,
+                                    start_idx=101,
+                                    end_idx=116)
+
+print(f"Loaded test cooling curves: "
+      f"{test_data['sim_index'].nunique()} simulations")
+
+# ── Compute curve-level errors ────────────────────────────────────────────────
+
+curve_rmse_list = []
+curve_maxad_list = []
+
+for j in range(len(test)):
+    T_surrogate = marshall_hoare(t_grid, A_pred[j], B_pred[j], T0, Ta)
+    T_mh_true   = marshall_hoare(t_grid, A_true[j], B_true[j], T0, Ta)
+
+    resid            = T_mh_true - T_surrogate
+    curve_rmse_list.append(np.sqrt(np.mean(resid ** 2)))
+    curve_maxad_list.append(np.max(np.abs(resid)))
+
+print(f"\nCurve reconstruction errors (surrogate vs MH reference):")
+print(f"  Mean RMSE    : {np.mean(curve_rmse_list):.4f} °C")
+print(f"  Std RMSE     : {np.std(curve_rmse_list):.4f} °C")
+print(f"  Max deviation: {np.max(curve_maxad_list):.4f} °C")
+
+# ── Plot reconstructed curves for all 16 test points ─────────────────────────
+
+ncols = 4
+nrows = int(np.ceil(len(test) / ncols))
+fig, axes = plt.subplots(nrows, ncols,
+                          figsize=(5 * ncols, 4 * nrows))
+axes = axes.flatten()
+
+for j in range(len(test)):
+    sim_idx  = test['sim_index'].values[j]
+    group_df = test_data[test_data['sim_index'] == sim_idx]
+
+    t_fe = group_df['Time'].values.astype(float)
+    T_fe = group_df['Temperature'].values.astype(float)
+
+    # Surrogate reconstructed curve
+    T_surrogate = marshall_hoare(t_grid, A_pred[j], B_pred[j], T0, Ta)
+
+    # MH reference curve using true fitted (A, B)
+    T_mh_true   = marshall_hoare(t_grid, A_true[j], B_true[j], T0, Ta)
+
+    ax = axes[j]
+
+    ax.plot(t_fe, T_fe, color='steelblue',
+            linewidth=1.5, label='FE simulation', zorder=3)
+    ax.plot(t_grid, T_mh_true, color='crimson',
+            linewidth=1.2, linestyle='--',
+            label='MH fit (true $A$, $B$)', zorder=2)
+    ax.plot(t_grid, T_surrogate, color='darkorange',
+            linewidth=1.2, linestyle=':',
+            label='Surrogate prediction', zorder=2)
+    ax.axhline(Ta, color='gray', linestyle=':',
+               linewidth=0.8)
+
+    ax.set_xlabel('Time (hours)', fontsize=8)
+    ax.set_ylabel('Temperature (°C)', fontsize=8)
+    ax.set_title(
+        f'Test {sim_idx} — '
+        f'RMSE = {curve_rmse_list[j]:.4f}°C',
+        fontsize=8
+    )
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # Only show legend on first panel
+    if j == 0:
+        ax.legend(fontsize=6)
+
+# Hide unused subplots
+for j in range(len(test), len(axes)):
+    axes[j].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('gp_curve_reconstruction.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Find the 4 representative test indices
+best_idx  = np.argmin(curve_rmse_list)
+worst_idx = np.argmax(curve_rmse_list)
+
+# Low and high convection from test set
+low_conv_idx  = test['convection'].values.argmin()
+high_conv_idx = test['convection'].values.argmax()
+
+print(f"Best RMSE   : test index {best_idx},\n        RMSE = {curve_rmse_list[best_idx]:.4f}°C")
+print(f"Worst RMSE  : test index {worst_idx},\n        RMSE = {curve_rmse_list[worst_idx]:.4f}°C")
+print(f"Low conv    : test index {low_conv_idx},\n        h = {test['convection'].values[low_conv_idx]:.3f}")
+print(f"High conv   : test index {high_conv_idx},\n        h = {test['convection'].values[high_conv_idx]:.3f}")
+
+# ── 2x2 representative curve reconstruction figure ────────────────────────────
+
+selected = {
+    'Best reconstruction\n($\\mathrm{RMSE} = 0.0011$K)'  : 14,
+    'Worst reconstruction\n($\\mathrm{RMSE} = 0.0730$K)' : 3,
+    'Low convection\n($h = 0.797\\,\\mathrm{W\\,m^{-2}K^{-1}}$)'   : 12,
+    'High convection\n($h = 5.433\\,\\mathrm{W\\,m^{-2}K^{-1}}$)'  : 0,
+}
+
+fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+axes = axes.flatten()
+
+for ax, (panel_label, j) in zip(axes, selected.items()):
+    sim_idx  = test['sim_index'].values[j]
+    group_df = test_data[test_data['sim_index'] == sim_idx]
+
+    t_fe = group_df['Time'].values.astype(float)
+    T_fe = group_df['Temperature'].values.astype(float)
+
+    T_surrogate = marshall_hoare(t_grid, A_pred[j], B_pred[j], T0, Ta)
+    T_mh_true   = marshall_hoare(t_grid, A_true[j], B_true[j], T0, Ta)
+
+    ax.plot(t_fe, T_fe,
+            color='steelblue', linewidth=1.8,
+            label='FE simulation')
+    ax.plot(t_grid, T_mh_true,
+            color='crimson', linewidth=1.4,
+            linestyle='--', label='MH fit (true $A$, $B$)')
+    ax.plot(t_grid, T_surrogate,
+            color='darkorange', linewidth=1.4,
+            linestyle=':', label='Surrogate reconstruction')
+    ax.axhline(Ta, color='gray', linestyle=':',
+               linewidth=0.8, alpha=0.6)
+
+    ax.set_xlabel('Time (hours)', fontsize=10)
+    ax.set_ylabel('Temperature (°C)', fontsize=10)
+    ax.set_title(panel_label, fontsize=9, pad=6)
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # Parameter annotation bottom right
+    ax.text(0.4, 0.05,
+            f'$A_{{\\mathrm{{true}}}}={A_true[j]:.3f}$, '
+            f'$\\hat{{A}}={A_pred[j]:.3f}$\n'
+            f'$B_{{\\mathrm{{true}}}}={B_true[j]:.4f}$, '
+            f'$\\hat{{B}}={B_pred[j]:.4f}$',
+            transform=ax.transAxes,
+            ha='right', va='bottom',
+            fontsize=7.5, color='dimgray',
+            bbox=dict(boxstyle='round,pad=0.3',
+                      facecolor='white', edgecolor='none', alpha=0.8))
+
+    if j == 14:  # only show legend on first panel
+        ax.legend(fontsize=8, loc='upper right')
+
+plt.tight_layout()
+plt.savefig('gp_curve_reconstruction_representative.png',
+            dpi=150, bbox_inches='tight')
+plt.show()
+
+"""For the paper, we limit this plot to 2 figures only here:"""
+
+# ── 1x2 representative curve reconstruction figure (paper version) ────────────
+
+selected = {
+    r'Worst-case surrogate accuracy' '\n' r'($\mathrm{RMSE} = 0.0730\,\mathrm{K}$)': 3,
+    r'High-convection regime' '\n' r'($h = 5.433\,\mathrm{W\,m^{-2}\,K^{-1}}$)': 0,
+}
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), sharey=True)
+
+for ax, (panel_label, j) in zip(axes, selected.items()):
+    sim_idx  = test['sim_index'].values[j]
+    group_df = test_data[test_data['sim_index'] == sim_idx]
+
+    t_fe = group_df['Time'].values.astype(float)
+    T_fe = group_df['Temperature'].values.astype(float)
+
+    T_surrogate = marshall_hoare(t_grid, A_pred[j], B_pred[j], T0, Ta)
+    T_mh_true   = marshall_hoare(t_grid, A_true[j], B_true[j], T0, Ta)
+
+    ax.plot(t_fe, T_fe,
+            color='steelblue', linewidth=1.8,
+            label='FE simulation')
+    ax.plot(t_grid, T_mh_true,
+            color='crimson', linewidth=1.4,
+            linestyle='--', label='MH fit (true $A$, $B$)')
+    ax.plot(t_grid, T_surrogate,
+            color='darkorange', linewidth=1.4,
+            linestyle=':', label='Surrogate reconstruction')
+    ax.axhline(Ta, color='gray', linestyle=':',
+               linewidth=0.8, alpha=0.6)
+
+    ax.set_xlabel('Time (hours)', fontsize=10)
+    ax.set_title(panel_label, fontsize=9, pad=6)
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # Parameter annotation bottom right
+    ax.text(0.4, 0.05,
+            f'$A_{{\\mathrm{{true}}}}={A_true[j]:.3f}$, '
+            f'$\\hat{{A}}={A_pred[j]:.3f}$\n'
+            f'$B_{{\\mathrm{{true}}}}={B_true[j]:.4f}$, '
+            f'$\\hat{{B}}={B_pred[j]:.4f}$',
+            transform=ax.transAxes,
+            ha='right', va='bottom',
+            fontsize=7.5, color='dimgray',
+            bbox=dict(boxstyle='round,pad=0.3',
+                      facecolor='white', edgecolor='none', alpha=0.8))
+
+    if j == 3:  # show legend on the first (worst-case) panel
+        ax.legend(fontsize=8, loc='upper right')
+
+axes[0].set_ylabel('Temperature (°C)', fontsize=10)
+
+plt.tight_layout()
+plt.savefig('pred_curve_paper.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# ── Full 16-panel figure for appendix ────────────────────────────────────────
+
+ncols = 4
+nrows = 4
+fig2, axes2 = plt.subplots(nrows, ncols, figsize=(5*ncols, 4*nrows))
+axes2 = axes2.flatten()
+
+for j in range(len(test)):
+    sim_idx  = test['sim_index'].values[j]
+    group_df = test_data[test_data['sim_index'] == sim_idx]
+
+    t_fe = group_df['Time'].values.astype(float)
+    T_fe = group_df['Temperature'].values.astype(float)
+
+    T_surrogate = marshall_hoare(t_grid, A_pred[j], B_pred[j], T0, Ta)
+    T_mh_true   = marshall_hoare(t_grid, A_true[j], B_true[j], T0, Ta)
+
+    ax = axes2[j]
+    ax.plot(t_fe, T_fe, color='steelblue',
+            linewidth=1.2, label='FE simulation')
+    ax.plot(t_grid, T_mh_true, color='crimson',
+            linewidth=1.0, linestyle='--',
+            label='MH fit')
+    ax.plot(t_grid, T_surrogate, color='darkorange',
+            linewidth=1.0, linestyle=':',
+            label='Surrogate')
+    ax.axhline(Ta, color='gray', linestyle=':',
+               linewidth=0.7, alpha=0.6)
+
+    ax.set_xlabel('Time (hours)', fontsize=8)
+    ax.set_ylabel('Temperature (°C)', fontsize=8)
+    ax.set_title(
+        f'Test {sim_idx} — '
+        f'RMSE $= {curve_rmse_list[j]:.4f}\\,^\\circ$C',
+        fontsize=8
+    )
+    ax.spines[['top', 'right']].set_visible(False)
+
+    if j == 0:
+        ax.legend(fontsize=7)
+
+plt.tight_layout()
+plt.savefig('gp_curve_reconstruction_full.png',
+            dpi=150, bbox_inches='tight')
+plt.show()
+
+print("Saved representative figure and full appendix figure.")
+
+# ── Surrogate residuals for all 16 test curves ────────────────────────────────
+# Residual = T_MH_true(t) - T_surrogate(t)
+# This isolates pure surrogate error, independent of MH approximation error.
+
+fig, ax = plt.subplots(figsize=(9, 4))
+
+for j in range(len(test)):
+    T_surrogate = marshall_hoare(t_grid, A_pred[j], B_pred[j], T0, Ta)
+    T_mh_true   = marshall_hoare(t_grid, A_true[j], B_true[j], T0, Ta)
+    resid       = T_mh_true - T_surrogate
+
+    ax.plot(t_grid, resid,
+            color='darkorange', linewidth=0.7, alpha=0.4)
+
+ax.axhline(0, color='black', linewidth=1.2,
+           linestyle='--', label='Zero line')
+
+# Annotate with RMSE range
+ax.text(0.98, 0.95,
+        f'Mean RMSE $= 0.023\\,^\\circ$C\n'
+        f'Max deviation $= 0.092\\,^\\circ$C',
+        transform=ax.transAxes,
+        ha='right', va='top', fontsize=9,
+        bbox=dict(boxstyle='round,pad=0.4',
+                  facecolor='white',
+                  edgecolor='lightgray', alpha=0.9))
+
+ax.set_xlabel('Time (hours)', fontsize=11)
+ax.set_ylabel(
+    'Residual $T_{\\mathrm{MH,true}}(t) - '
+    '\\hat{T}_{\\mathrm{surrogate}}(t)$ (°C)',
+    fontsize=10)
+ax.set_ylim(-0.12, 0.12)
+ax.legend(fontsize=9)
+ax.spines[['top', 'right']].set_visible(False)
+
+plt.tight_layout()
+plt.savefig('gp_surrogate_residuals.png', dpi=150, bbox_inches='tight')
+plt.show()
