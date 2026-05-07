@@ -110,6 +110,9 @@ ax1.legend(lines1 + lines2, labels1 + labels2, loc='lower left')
 
 #plt.title('Marshall–Hoare model and its time derivative')
 plt.tight_layout()
+fig.savefig(OUT_DIR / "mh_derivative.png",
+            dpi=300,
+            bbox_inches="tight")
 plt.close()
 
 """## Asymptotic behaviour:"""
