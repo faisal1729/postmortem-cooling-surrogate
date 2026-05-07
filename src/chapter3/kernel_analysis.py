@@ -6,8 +6,6 @@ This script:
 - visualizes prior samples
 - performs GP regression on a single cooling curve
 - evaluates uncertainty behaviour
-
-The script is fully repository-relative and does not depend on Google Colab.
 """
 
 import numpy as np
@@ -21,12 +19,14 @@ from sklearn.preprocessing import StandardScaler
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+curve_path = BASE_DIR / "data" / "sample_curve.gnu"
+
+RESULTS_DIR = BASE_DIR / "results" / "chapter3"
+
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 np.random.seed(42)
 tf.random.set_seed(42)
-
-curve_path = BASE_DIR / "data" / "sample_curve.gnu"
 
 if not curve_path.exists():
     raise FileNotFoundError(
