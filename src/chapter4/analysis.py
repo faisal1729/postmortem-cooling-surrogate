@@ -12,7 +12,7 @@ from pathlib import Path
 
 # ── Load datasets ─────────────────────────────────────────────────────────────
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 training = pd.read_csv(BASE_DIR / 'data' / 'training_data.csv')
 test     = pd.read_csv(BASE_DIR / 'data' / 'test_data.csv')
