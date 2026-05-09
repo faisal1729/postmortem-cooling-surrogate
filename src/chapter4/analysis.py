@@ -1023,7 +1023,7 @@ t_grid = np.linspace(0, 20, 241)
 # ── Load test FE cooling curves from .gnu files ───────────────────────────────
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 test_gnu_dir = BASE_DIR / 'data' / 'coolingCurves'
 test_data    = load_cooling_curves(test_gnu_dir,
                                     start_idx=101,
