@@ -121,7 +121,7 @@ axes[-1].set_visible(False)
 
 plt.tight_layout()
 plt.savefig('eda_input_distributions.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 """These plots mainly describe that the adaptive strategy consistently identified boundary regions of the parameter space as most uncertain."""
 
@@ -190,7 +190,7 @@ for col_idx, output in enumerate(['A', 'B']):
 
 plt.tight_layout()
 plt.savefig('eda_ab_distributions.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── Print comparison stats ────────────────────────────────────────────────────
 print("A — Initial vs Adaptive:")
@@ -244,7 +244,7 @@ for ax, target in zip(axes, ['A', 'B']):
 
 plt.tight_layout()
 plt.savefig('eda_correlations.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── Print correlation table ───────────────────────────────────────────────────
 print("Pearson correlations with A and B:")
@@ -299,7 +299,7 @@ for row, param in enumerate(parameter_cols):
 
 plt.tight_layout()
 plt.savefig('eda_scatter_inputs_vs_outputs.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 import matplotlib.pyplot as plt
 
@@ -324,7 +324,7 @@ ax.legend(fontsize=9, loc='best')
 
 plt.tight_layout()
 plt.savefig('sample_distribution_kappa_rho.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 """We now plot the residuals:"""
 
@@ -490,7 +490,7 @@ ax.spines[['top', 'right']].set_visible(False)
 
 plt.tight_layout()
 plt.savefig('mh_residuals_adaptive.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── Goodness of fit summary ───────────────────────────────────────────────────
 
@@ -656,7 +656,7 @@ axes[-1].set_visible(False)
 
 plt.tight_layout()
 plt.savefig('eda_train_test_comparison.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── Print range comparison table ──────────────────────────────────────────────
 
@@ -885,7 +885,7 @@ for ax, (ls, title, color) in zip(axes, configs):
 
 plt.tight_layout()
 plt.savefig('gp_length_scales.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── GP predictions on test set ────────────────────────────────────────────────
 # predict_f returns the noiseless posterior — appropriate for evaluating
@@ -955,7 +955,7 @@ for ax, true, pred, var, label, color in zip(
 
 plt.tight_layout()
 plt.savefig('gp_predicted_vs_true.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
 
@@ -1008,7 +1008,7 @@ for ax, (true, pred, var, label, rmse) in zip(axes, configs):
 
 plt.tight_layout()
 plt.savefig('gp_predicted_vs_true_calibrated.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── Reconstruct cooling curves from surrogate-predicted (A, B) ────────────────
 # For each test point:
@@ -1103,7 +1103,7 @@ for j in range(len(test), len(axes)):
 
 plt.tight_layout()
 plt.savefig('gp_curve_reconstruction.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # Find the 4 representative test indices
 best_idx  = np.argmin(curve_rmse_list)
@@ -1175,7 +1175,7 @@ for ax, (panel_label, j) in zip(axes, selected.items()):
 plt.tight_layout()
 plt.savefig('gp_curve_reconstruction_representative.png',
             dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 """For the paper, we limit this plot to 2 figures only here:"""
 
@@ -1233,7 +1233,7 @@ axes[0].set_ylabel('Temperature (°C)', fontsize=10)
 
 plt.tight_layout()
 plt.savefig('pred_curve_paper.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 # ── Full 16-panel figure for appendix ────────────────────────────────────────
 
@@ -1279,7 +1279,7 @@ for j in range(len(test)):
 plt.tight_layout()
 plt.savefig('gp_curve_reconstruction_full.png',
             dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
 
 print("Saved representative figure and full appendix figure.")
 
@@ -1321,4 +1321,4 @@ ax.spines[['top', 'right']].set_visible(False)
 
 plt.tight_layout()
 plt.savefig('gp_surrogate_residuals.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.close(fig)
