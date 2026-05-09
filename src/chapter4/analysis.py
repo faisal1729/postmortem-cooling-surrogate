@@ -400,7 +400,7 @@ def load_cooling_curves(directory, start_idx=1, end_idx=100):
 
 # ── Load all 100 training cooling curves ─────────────────────────────────────
 
-directory = 'data/coolingCurves'
+directory = BASE_DIR / "data" / "coolingCurves"
 
 BASE_DIR = Path(__file__).resolve().parent
 directory = BASE_DIR / 'data' / 'coolingCurves'
