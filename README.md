@@ -3,7 +3,8 @@
 This repository accompanies the master's thesis:
 
 > **Faisal Hussain Shah (2026)**
-> *Gaussian Process Surrogate for Post-Mortem Cooling Dynamics, with Application to Forensic Time-of-Death Estimation*
+> *Machine Learning in Forensic Medicine -
+             Time of Death Estimation*
 > Master's thesis, Universität Potsdam, in cooperation with the Computational Anatomy and Physiology group, Zuse Institute Berlin (ZIB).
 > Supervisor: Dr. Martin Weiser.
 
@@ -98,8 +99,8 @@ Random seeds are fixed throughout.
 ```bibtex
 @mastersthesis{shah2026surrogate,
   author  = {Shah, Faisal Hussain},
-  title   = {Gaussian Process Surrogate for Post-Mortem Cooling Dynamics,
-             with Application to Forensic Time-of-Death Estimation},
+  title   = {Machine Learning in Forensic Medicine -
+             Time of Death Estimation},
   school  = {Universit\"at Potsdam},
   year    = {2026},
   type    = {Master's thesis},
@@ -120,4 +121,4 @@ MIT License. See `LICENSE`.
 
 ## Acknowledgements
 
-This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for his time, guidance, and access to the Kaskade FE pipeline, and to Berlin Charité for the forensic data shared under the corresponding data-protection agreement.
+This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for his time, guidance, and access to the Kaskade FE pipeline, and to UniversitätKlinikum Jena for the forensic data shared under the corresponding data-protection agreement.
