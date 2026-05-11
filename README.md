@@ -70,13 +70,13 @@ Chapter 1 (Introduction) and Chapter 6 (Discussion and Conclusions) are exposito
 
 Chapter 2 develops the Marshall–Hoare model from first principles, starting from Newton's law of cooling and arriving at the two-exponential form
 
-$$
+```math
 T_{\mathrm{MH}}(t;\,A,B,T_0,T_a)
 =
 T_a + (T_0 - T_a)\left[
 A e^{Bt} + (1-A)e^{\frac{AB}{A-1}t}
 \right]
-$$
+```
 
 with the eigenmode interpretation following Carslaw and Jaeger. The accompanying script `behaviour_of_mh.py` produces the illustrative figures used in the chapter: the canonical plateau-and-decay shape, the limiting behaviours as $A \to 0$ and $A \to \infty$, and the comparisons against pure Newtonian cooling that motivate the two-parameter form.
 
