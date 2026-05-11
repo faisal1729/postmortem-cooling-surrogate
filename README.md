@@ -2,10 +2,10 @@
 
 This repository accompanies the master's thesis:
 
-> **Faisal Hussain Shah (2026)**
-> *Machine Learning in Forensic Medicine -
-             Time of Death Estimation* \\
-> Master's thesis, Universität Potsdam, in cooperation with the Computational Anatomy and Physiology group, Zuse Institute Berlin (ZIB).
+> **Faisal Hussain Shah (2026)**  
+> *Machine Learning in Forensic Medicine*  
+> *Time of Death Estimation*  
+> Master's thesis, Universität Potsdam, in cooperation with the Computational Anatomy and Physiology group, Zuse Institute Berlin (ZIB).  
 > Supervisor: Dr. Martin Weiser.
 
 The code reproduces the analyses, models, and figures of Chapters 2 through 5.
