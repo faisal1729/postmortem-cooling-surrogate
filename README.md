@@ -35,7 +35,7 @@ postmortem-cooling-surrogate/
 │   ├── chapter2/               # Marshall–Hoare model behaviour
 │   ├── chapter3/               # Gaussian process kernel analysis
 │   ├── chapter4/               # Adaptive surrogate on simulation data
-│   └── chapter5/               # Identifiability study on forensic data
+│                  
 │
 ├── README.md
 ├── LICENSE
