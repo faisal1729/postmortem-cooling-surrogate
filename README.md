@@ -109,7 +109,7 @@ The script `analysis.py` is the entry point for the chapter; `adaptive_loop.py` 
 
 `src/chapter5/`
 
-Chapter 5 takes the surrogate framework out of the simulation regime and onto a real forensic dataset of 80 cases from Berlin Charité, in which rectal temperature, ambient temperature, and case-level covariates (body mass, rectal probe depth, time of first measurement) are recorded along with a verified PMI. The inputs are no longer FE parameters and the outputs $(A, B)$ are no longer ground truth, but the structure of the pipeline carries over: fit MH parameters per case, train a GP to predict them from covariates, evaluate by leave-one-out cross-validation.
+Chapter 5 takes the surrogate framework out of the simulation regime and onto a real forensic dataset of 80 cases from an Insitute of Forensic Meidicine, in which rectal temperature, ambient temperature, and case-level covariates (body mass, rectal probe depth, time of first measurement) are recorded along with a verified PMI. The inputs are no longer FE parameters and the outputs $(A, B)$ are no longer ground truth, but the structure of the pipeline carries over: fit MH parameters per case, train a GP to predict them from covariates, evaluate by leave-one-out cross-validation.
 
 Two findings shape the chapter. The plateau parameter $A$ turns out to be **not reliably identifiable** from the available covariates: across all kernel and covariate choices the cross-validated $R^2$ remains below $0.20$, and on the death-anchored fits it is essentially zero. The decay parameter $B$ is **moderately identifiable**, with $R^2 \approx 0.57$–$0.59$ depending on whether rectal probe depth is included. Adding probe depth helps both parameters slightly but does not rescue $A$.
 
@@ -191,4 +191,4 @@ MIT License. See `LICENSE`.
 
 ## Acknowledgements
 
-This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for the time, guidance, and access to the Kaskade FE pipeline that made the surrogate study possible, and for the forensic data shared by Berlin Charité under the corresponding data-protection agreement.
+This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for the time, guidance, and access to the Kaskade FE pipeline that made the surrogate study possible, and for the forensic data shared by UniversitätKlinikum Jena under the corresponding data-protection agreement.
