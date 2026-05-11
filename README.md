@@ -3,7 +3,7 @@
 This repository accompanies the master's thesis:
 
 > **Faisal Hussain Shah (2026)**
-> *Gaussian Process Surrogate for Post-Mortem Cooling Dynamics, with Application to Forensic Time-of-Death Estimation*
+> *Machine Learning in Forensic Medicine - Time of Death Estimation*
 > Master's thesis, Universität Potsdam, in cooperation with the Computational Anatomy and Physiology group, Zuse Institute Berlin (ZIB).
 > Supervisor: Dr. Martin Weiser.
 
@@ -70,7 +70,13 @@ Chapter 1 (Introduction) and Chapter 6 (Discussion and Conclusions) are exposito
 
 Chapter 2 develops the Marshall–Hoare model from first principles, starting from Newton's law of cooling and arriving at the two-exponential form
 
-$$\frac{T(t) - T_a}{T_0 - T_a} \;=\; (1 + A)\, e^{Bt} \;-\; A\, e^{(1 + 1/A)\,Bt},$$
+$$
+T_{\mathrm{MH}}(t;\,A,B,T_0,T_a)
+=
+T_a + (T_0 - T_a)\left[
+A\,e^{Bt} + (1-A)\,e^{\frac{AB}{A-1}\,t}
+\right]
+$$
 
 with the eigenmode interpretation following Carslaw and Jaeger. The accompanying script `behaviour_of_mh.py` produces the illustrative figures used in the chapter: the canonical plateau-and-decay shape, the limiting behaviours as $A \to 0$ and $A \to \infty$, and the comparisons against pure Newtonian cooling that motivate the two-parameter form.
 
@@ -109,7 +115,7 @@ The script `analysis.py` is the entry point for the chapter; `adaptive_loop.py` 
 
 `src/chapter5/`
 
-Chapter 5 turns to a real forensic dataset of 80 cases from Berlin Charité in which rectal temperature, ambient temperature, and case-level covariates — corrected body mass $m_c$, height $h$, ambient temperature $T_a$, and (for a subset) rectal probe insertion depth $d$ — are recorded alongside a verified PMI. The chapter is not an attempt to deploy the simulation-trained surrogate on casework; the inputs available in the field are case covariates, not the physical parameters that drive the FE solver, so the question has to be posed differently.
+Chapter 5 turns to a real forensic dataset of 80 cases from an institute of forensic medicine in which rectal temperature, ambient temperature, and case-level covariates — corrected body mass $m_c$, height $h$, ambient temperature $T_a$, and (for a subset) rectal probe insertion depth $d$ — are recorded alongside a verified PMI. The chapter is not an attempt to deploy the simulation-trained surrogate on casework; the inputs available in the field are case covariates, not the physical parameters that drive the FE solver, so the question has to be posed differently.
 
 The chapter pursues a twofold question. First, whether the Marshall–Hoare parameters $(A, B)$ are identifiable from the baseline body covariates $(m_c, h, T_a)$. Second, whether augmenting this baseline with the rectal probe insertion depth $d$ meaningfully improves that identifiability. The two questions are addressed in sequence, and the answers turn out to differ between the two parameters.
 
@@ -193,4 +199,4 @@ MIT License. See `LICENSE`.
 
 ## Acknowledgements
 
-This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for the time, guidance, and access to the Kaskade FE pipeline that made the surrogate study possible, and for the forensic data shared by Berlin Charité under the corresponding data-protection agreement.
+This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for the time, guidance, and access to the Kaskade FE pipeline that made the surrogate study possible, and for the forensic data shared by UniversitätKlinikum under the corresponding data-protection agreement.
