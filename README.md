@@ -49,7 +49,8 @@ Chapter 1 (Introduction) and Chapter 6 (Discussion and Conclusions) are exposito
 
 ## Chapter contents
 
-**Chapter 2 — Marshall–Hoare model.** Derivation of the two-exponential cooling law from heat-conduction first principles, with the eigenmode interpretation following Carslaw and Jaeger. `behaviour_of_mh.py` reproduces the illustrative figures.
+**Chapter 2 — Marshall–Hoare model.** A detailed study of the two-exponential cooling model: parameter sensitivity analysis of its parameters: $A$ and $B$, 
+connection to Newtonian cooling in the appropriate limit, and the Henssge reparametrisation used in forensic practice. `behaviour_of_mh.py` reproduces the illustrative figures.
 
 **Chapter 3 — Gaussian process regression.** Priors, posteriors, kernel choice, and hyperparameter learning, at the level needed for the surrogate work. `kernel_analysis.py` compares the squared exponential, Matérn-3/2, and Matérn-5/2 kernels on a single representative cooling curve from `sample_curve.gnu`.
 
