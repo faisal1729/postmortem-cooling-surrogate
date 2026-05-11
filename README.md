@@ -74,7 +74,7 @@ $$
 T_{\mathrm{MH}}(t;\,A,B,T_0,T_a)
 =
 T_a + (T_0 - T_a)\left[
-A\,e^{Bt} + (1-A)\,e^{\frac{AB}{A-1}\,t}
+A e^{Bt} + (1-A)e^{\frac{AB}{A-1}t}
 \right]
 $$
 
