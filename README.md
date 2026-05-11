@@ -7,7 +7,7 @@ This repository accompanies the master's thesis:
 > Master's thesis, Universität Potsdam, in cooperation with the Computational Anatomy and Physiology group, Zuse Institute Berlin (ZIB).  
 > Supervisor: Dr. Martin Weiser.
 
-The code reproduces the analyses, models, and figures of Chapters 2 through 5.
+The code reproduces the analyses, models, and figures of Chapters 2 through 4.
 
 ---
 
