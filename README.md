@@ -3,7 +3,7 @@
 This repository accompanies the master's thesis:
 
 > **Faisal Hussain Shah (2026)**
-> *Machine Learning in Forensic Medicine - Time of Death Estimation*
+> *Gaussian Process Surrogate for Post-Mortem Cooling Dynamics, with Application to Forensic Time-of-Death Estimation*
 > Master's thesis, Universität Potsdam, in cooperation with the Computational Anatomy and Physiology group, Zuse Institute Berlin (ZIB).
 > Supervisor: Dr. Martin Weiser.
 
@@ -13,16 +13,16 @@ The code reproduces the analyses, models, and figures developed in Chapters 2 th
 
 ## Overview
 
-Estimating the post-mortem interval (PMI) from body cooling is one of the oldest problems in forensic medicine, and one of the few in which physical modelling can in principle replace rules of thumb. The thesis brings together three threads that are usually treated in isolation: finite element (FE) simulations of three-dimensional heat transfer in an anatomical domain, the Marshall–Hoare (MH) double-exponential cooling law that forensic practitioners actually use, and Gaussian process regression (GPR) as a surrogate that bridges the two.
+Estimating the post-mortem interval (PMI) from body cooling is one of the oldest problems in forensic medicine, and one of the few in which physical modelling can, in principle, replace rules of thumb. The thesis takes a different approach from the standard one. Rather than forcing a simple analytical model onto a complex physical process, it builds a computational pipeline that respects the underlying heat transfer physics while treating the unavoidable uncertainties honestly.
 
-The pipeline is straightforward to describe and the contribution of the thesis is to make each step rigorous:
+The core idea is to pair a high-fidelity finite element (FE) simulation of postmortem cooling with a Gaussian process surrogate that learns the relationship between an individual's physical characteristics and their cooling behaviour — rapidly, and with calibrated uncertainty. The practical benefit is twofold. First, predictions become near-instantaneous at query time. Second, and arguably more important, once the surrogate is trained the forensic practitioner no longer needs access to the full FE pipeline at all: no CT segmentation, no mesh generation, no simulation software. A process that currently demands specialist infrastructure and hours of manual preparation is reduced to a function evaluation. The result is a tool that can give a forensic practitioner not just a PMI estimate but a credible interval around it — an honest answer rather than a precise-sounding one.
+
+Concretely, the pipeline runs in four steps:
 
 1. FE simulations under varying physical and environmental parameters generate cooling curves at the rectal probe location.
 2. Each curve is reduced to a pair of Marshall–Hoare parameters $(A, B)$ by non-linear least squares.
 3. A Gaussian process is trained to predict $(A, B)$ from the underlying physical inputs, giving a fast and uncertainty-aware surrogate for the FE solver.
-4. The same surrogate framework is then applied to a real forensic dataset, where the inputs are case-level covariates rather than simulation parameters.
-
-The surrogate replaces a computation that takes hours with one that takes milliseconds, while propagating uncertainty in a principled way. Whether the same idea transfers to real casework — where the physical assumptions of the FE model no longer hold exactly — is the question Chapter 5 sets out to answer.
+4. A real forensic dataset is then examined on its own terms — fitting Marshall–Hoare per case and asking whether $(A, B)$ can be recovered from the body covariates that are actually available in casework. This is an identifiability study rather than an application of the simulation-trained surrogate, and the asymmetry between $A$ and $B$ that emerges is one of the substantive findings of the thesis.
 
 ---
 
@@ -109,11 +109,13 @@ The script `analysis.py` is the entry point for the chapter; `adaptive_loop.py` 
 
 `src/chapter5/`
 
-Chapter 5 takes the surrogate framework out of the simulation regime and onto a real forensic dataset of 80 cases from an Insitute of Forensic Meidicine, in which rectal temperature, ambient temperature, and case-level covariates (body mass, rectal probe depth, time of first measurement) are recorded along with a verified PMI. The inputs are no longer FE parameters and the outputs $(A, B)$ are no longer ground truth, but the structure of the pipeline carries over: fit MH parameters per case, train a GP to predict them from covariates, evaluate by leave-one-out cross-validation.
+Chapter 5 turns to a real forensic dataset of 80 cases from Berlin Charité in which rectal temperature, ambient temperature, and case-level covariates — corrected body mass $m_c$, height $h$, ambient temperature $T_a$, and (for a subset) rectal probe insertion depth $d$ — are recorded alongside a verified PMI. The chapter is not an attempt to deploy the simulation-trained surrogate on casework; the inputs available in the field are case covariates, not the physical parameters that drive the FE solver, so the question has to be posed differently.
 
-Two findings shape the chapter. The plateau parameter $A$ turns out to be **not reliably identifiable** from the available covariates: across all kernel and covariate choices the cross-validated $R^2$ remains below $0.20$, and on the death-anchored fits it is essentially zero. The decay parameter $B$ is **moderately identifiable**, with $R^2 \approx 0.57$–$0.59$ depending on whether rectal probe depth is included. Adding probe depth helps both parameters slightly but does not rescue $A$.
+The chapter pursues a twofold question. First, whether the Marshall–Hoare parameters $(A, B)$ are identifiable from the baseline body covariates $(m_c, h, T_a)$. Second, whether augmenting this baseline with the rectal probe insertion depth $d$ meaningfully improves that identifiability. The two questions are addressed in sequence, and the answers turn out to differ between the two parameters.
 
-The chapter argues that this asymmetry is a substantive forensic finding rather than a modelling failure. $B$ inherits the $1/m_c$ scaling of Newtonian cooling and is therefore well-anchored by body mass; $A$ depends on local probe–tissue geometry that case metadata does not capture. The chapter also documents the move from chamber-anchored to death-anchored MH fits, which removes a systematic bias in $T_0$ but tightens the identifiability of $A$ rather than loosening it.
+The structure of the analysis mirrors Chapter 4: Marshall–Hoare parameters are fitted per case, a Gaussian process is trained to predict them from covariates, and predictive quality is assessed by leave-one-out cross-validation. The decay parameter $B$ is **moderately identifiable**, with $R^2 \approx 0.57$–$0.59$ depending on whether probe depth is included. The plateau parameter $A$ is **not reliably identifiable** under any covariate set tested, with cross-validated $R^2$ below $0.20$ throughout. Adding probe depth helps both parameters, but does not rescue $A$.
+
+The chapter argues that this asymmetry is a substantive forensic finding rather than a modelling failure. $B$ inherits the $1/m_c$ scaling of Newtonian cooling and is well-anchored by body mass; $A$ depends on local probe–tissue geometry that the available case metadata does not capture. The chapter also documents the move from chamber-anchored to death-anchored MH fits, which removes a systematic bias in $T_0$.
 
 The forensic dataset itself is not redistributed for data-protection reasons. The repository contains the analysis scripts and a placeholder structure that would reproduce the chapter on any dataset with the same schema.
 
@@ -191,4 +193,4 @@ MIT License. See `LICENSE`.
 
 ## Acknowledgements
 
-This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for the time, guidance, and access to the Kaskade FE pipeline that made the surrogate study possible, and for the forensic data shared by UniversitätKlinikum Jena under the corresponding data-protection agreement.
+This work was carried out within the Computational Anatomy and Physiology group at the Zuse Institute Berlin (ZIB), under the supervision of Dr. Martin Weiser. I am grateful for the time, guidance, and access to the Kaskade FE pipeline that made the surrogate study possible, and for the forensic data shared by Berlin Charité under the corresponding data-protection agreement.
