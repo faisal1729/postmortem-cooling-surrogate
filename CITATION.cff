@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "Gaussian Process Surrogate for Post-Mortem Cooling: Simulation Pipeline and Adaptive Design Implementation"
+title: "Machine Learning in Forensic Medicine - Time of Death estimation"
 authors:
   - family-names: "Shah"
     given-names: "Faisal Hussain"
